@@ -6194,6 +6194,8 @@ dependencies = [
  "embed-burn",
  "embed-candle",
  "embed-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
