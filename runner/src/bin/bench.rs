@@ -1,16 +1,19 @@
-//! Phase 1 benchmark harness.
+//! Phase 1 benchmark harness (interleaved, paired).
 //!
-//! Two scenarios (per the design, mapping MLPerf single-stream + offline to
-//! NAHPU usage):
-//!   - `latency_single`  — interactive search: one embed at a time (batch=1),
-//!     reported as p50/p95/p99 over short/medium/long inputs.
-//!   - `throughput`      — bulk indexing: embed a batch, swept over batch sizes,
-//!     reported as sentences/second.
+//! Two scenarios (design: MLPerf single-stream + offline mapped to NAHPU usage):
+//!   - `latency_single` — interactive search, one embed at a time (batch=1),
+//!     over short/medium/long inputs.
+//!   - `throughput`     — bulk indexing, embed a batch, swept over batch sizes.
 //!
-//! Methodology: warm up past the turbo window, collect many samples, report the
-//! distribution + relative margin of error (DoD bar: < 5%). Pin threads before
-//! running, e.g. `RAYON_NUM_THREADS=1 cargo run --release -p runner --bin bench`.
-//! Emits results/<timestamp>.json (the single source of truth for tables/plots).
+//! Why interleaved: an unpinned laptop (Apple Silicon P/E cores, power mgmt)
+//! drifts run-to-run more than 5%, so absolute single-run reproducibility is not
+//! achievable here. Instead we run N trials; within each trial both engines are
+//! measured back-to-back (order alternates per trial) so they share identical
+//! conditions. We then report median +/- IQR across trials, and the per-trial
+//! speedup ratio. The decision rule: engines are *distinguishable* when the IQR
+//! of the speedup ratio excludes 1.0 (effect size exceeds run-to-run spread).
+//!
+//! Run pinned + on AC: `RAYON_NUM_THREADS=1 cargo run --release -p runner --bin bench`.
 
 use std::process::Command;
 use std::time::Instant;
@@ -21,12 +24,14 @@ use embed_candle::CandleEngine;
 use embed_core::InferenceEngine;
 use serde::Serialize;
 
-const WARMUP: usize = 20;
-const LATENCY_SAMPLES: usize = 200;
-const THROUGHPUT_REPS: usize = 20;
+const TRIALS: usize = 10;
+const WARMUP: usize = 5;
+const LATENCY_SAMPLES: usize = 80;
+const THROUGHPUT_REPS: usize = 10;
 const BATCH_SIZES: &[usize] = &[1, 8, 16, 32, 64];
 
-// Framework versions (kept in sync with the Cargo.toml dep specs).
+const CANDLE: &str = "candle-cpu";
+const BURN: &str = "burn-ndarray";
 const CANDLE_VERSION: &str = "0.9";
 const BURN_VERSION: &str = "0.21";
 
@@ -34,7 +39,17 @@ const BURN_VERSION: &str = "0.21";
 struct Report {
     timestamp: String,
     environment: Environment,
-    results: Vec<Measurement>,
+    config: Config,
+    latency: Vec<LatencyRec>,
+    throughput: Vec<ThroughputRec>,
+}
+
+#[derive(Serialize)]
+struct Config {
+    trials: usize,
+    latency_samples: usize,
+    throughput_reps: usize,
+    batch_sizes: Vec<usize>,
 }
 
 #[derive(Serialize)]
@@ -44,41 +59,47 @@ struct Environment {
     os: String,
     rustc: String,
     rayon_threads: String,
+    on_ac_power: bool,
     candle_version: String,
     burn_version: String,
 }
 
+/// Aggregate of one metric across trials.
 #[derive(Serialize)]
-#[serde(tag = "scenario")]
-enum Measurement {
-    #[serde(rename = "latency_single")]
-    Latency {
-        engine: String,
-        seq_label: String,
-        approx_tokens: usize,
-        samples: usize,
-        mean_ms: f64,
-        p50_ms: f64,
-        p95_ms: f64,
-        p99_ms: f64,
-        rel_moe_pct: f64,
-    },
-    #[serde(rename = "throughput")]
-    Throughput {
-        engine: String,
-        batch: usize,
-        reps: usize,
-        sentences_per_sec: f64,
-    },
+struct Agg {
+    median: f64,
+    p25: f64,
+    p75: f64,
+    iqr: f64,
+    n: usize,
+}
+
+#[derive(Serialize)]
+struct LatencyRec {
+    seq_label: String,
+    approx_tokens: usize,
+    candle_ms: Agg,
+    burn_ms: Agg,
+    /// Per-trial burn_ms / candle_ms (>1 means Candle is faster).
+    candle_speedup_x: Agg,
+    distinguishable: bool,
+    faster: String,
+}
+
+#[derive(Serialize)]
+struct ThroughputRec {
+    batch: usize,
+    candle_sps: Agg,
+    burn_sps: Agg,
+    /// Per-trial candle_sps / burn_sps (>1 means Candle is faster).
+    candle_speedup_x: Agg,
+    distinguishable: bool,
+    faster: String,
 }
 
 fn main() -> Result<()> {
-    let engines = load_engines()?;
-    if engines.is_empty() {
-        anyhow::bail!("no working engines");
-    }
+    let (candle, burn) = load_engines()?;
 
-    // Inputs of increasing length for the latency scenario.
     let inputs = [
         ("short", "Dark brown iris."),
         (
@@ -94,45 +115,85 @@ fn main() -> Result<()> {
              primary forest understory shortly after dawn.",
         ),
     ];
+    let corpus = embed_core::load_corpus("data/corpus.sample.txt").unwrap_or_default();
 
-    let mut results = Vec::new();
+    // Per-trial samples, keyed by scenario; index 0 = candle, 1 = burn.
+    let mut lat: Vec<[Vec<f64>; 2]> = (0..inputs.len()).map(|_| [vec![], vec![]]).collect();
+    let mut thr: Vec<[Vec<f64>; 2]> = (0..BATCH_SIZES.len()).map(|_| [vec![], vec![]]).collect();
 
-    for (name, engine) in &engines {
-        eprintln!("== {name} ==");
-        // Scenario A: single-stream latency.
-        for (label, text) in &inputs {
-            let m = bench_latency(engine.as_ref(), name, label, text)?;
-            if let Measurement::Latency {
-                p50_ms,
-                p95_ms,
-                rel_moe_pct,
-                ..
-            } = &m
-            {
-                eprintln!(
-                    "  latency[{label:>6}] p50={p50_ms:.3}ms p95={p95_ms:.3}ms moe={rel_moe_pct:.1}%"
-                );
-            }
-            results.push(m);
+    for trial in 0..TRIALS {
+        eprintln!("trial {}/{}", trial + 1, TRIALS);
+        // Alternate which engine is measured first to cancel order/drift bias.
+        let candle_first = trial % 2 == 0;
+
+        for (i, (_label, text)) in inputs.iter().enumerate() {
+            let (c, b) = measure_pair(candle_first, || latency_once(&candle, text), || {
+                latency_once(&burn, text)
+            })?;
+            lat[i][0].push(c);
+            lat[i][1].push(b);
         }
-        // Scenario B: offline throughput.
-        for &batch in BATCH_SIZES {
-            let m = bench_throughput(engine.as_ref(), name, batch)?;
-            if let Measurement::Throughput {
-                sentences_per_sec,
-                ..
-            } = &m
-            {
-                eprintln!("  thrpt[b={batch:>2}] {sentences_per_sec:.0} sent/s");
-            }
-            results.push(m);
+        for (i, &batch) in BATCH_SIZES.iter().enumerate() {
+            let (c, b) = measure_pair(
+                candle_first,
+                || throughput_once(&candle, batch, &corpus),
+                || throughput_once(&burn, batch, &corpus),
+            )?;
+            thr[i][0].push(c);
+            thr[i][1].push(b);
         }
     }
+
+    let latency: Vec<LatencyRec> = inputs
+        .iter()
+        .enumerate()
+        .map(|(i, (label, text))| {
+            let speedup: Vec<f64> = zip_ratio(&lat[i][1], &lat[i][0]); // burn/candle
+            let s = agg(speedup);
+            let (dist, faster) = decide(&s);
+            LatencyRec {
+                seq_label: label.to_string(),
+                approx_tokens: text.split_whitespace().count(),
+                candle_ms: agg(lat[i][0].clone()),
+                burn_ms: agg(lat[i][1].clone()),
+                candle_speedup_x: s,
+                distinguishable: dist,
+                faster,
+            }
+        })
+        .collect();
+
+    let throughput: Vec<ThroughputRec> = BATCH_SIZES
+        .iter()
+        .enumerate()
+        .map(|(i, &batch)| {
+            let speedup: Vec<f64> = zip_ratio(&thr[i][0], &thr[i][1]); // candle/burn
+            let s = agg(speedup);
+            let (dist, faster) = decide(&s);
+            ThroughputRec {
+                batch,
+                candle_sps: agg(thr[i][0].clone()),
+                burn_sps: agg(thr[i][1].clone()),
+                candle_speedup_x: s,
+                distinguishable: dist,
+                faster,
+            }
+        })
+        .collect();
+
+    print_summary(&latency, &throughput);
 
     let report = Report {
         timestamp: cmd("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"]).unwrap_or_default(),
         environment: capture_env(),
-        results,
+        config: Config {
+            trials: TRIALS,
+            latency_samples: LATENCY_SAMPLES,
+            throughput_reps: THROUGHPUT_REPS,
+            batch_sizes: BATCH_SIZES.to_vec(),
+        },
+        latency,
+        throughput,
     };
 
     std::fs::create_dir_all("results")?;
@@ -144,81 +205,83 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn load_engines() -> Result<Vec<(String, Box<dyn InferenceEngine>)>> {
-    let model_dir = "data/models/all-MiniLM-L6-v2";
-    let mut v: Vec<(String, Box<dyn InferenceEngine>)> = Vec::new();
-    let candle = CandleEngine::load(model_dir)?;
-    if candle.embed("probe").is_ok() {
-        v.push((candle.name().to_string(), Box::new(candle)));
+/// Measure two closures adjacently, honoring the alternating order.
+fn measure_pair(
+    candle_first: bool,
+    candle: impl Fn() -> Result<f64>,
+    burn: impl Fn() -> Result<f64>,
+) -> Result<(f64, f64)> {
+    if candle_first {
+        let c = candle()?;
+        let b = burn()?;
+        Ok((c, b))
+    } else {
+        let b = burn()?;
+        let c = candle()?;
+        Ok((c, b))
     }
-    let burn = BurnEngine::load(model_dir)?;
-    if burn.embed("probe").is_ok() {
-        v.push((burn.name().to_string(), Box::new(burn)));
-    }
-    Ok(v)
 }
 
-fn bench_latency(
-    engine: &dyn InferenceEngine,
-    name: &str,
-    label: &str,
-    text: &str,
-) -> Result<Measurement> {
+/// One latency measurement: median of LATENCY_SAMPLES single embeds (ms).
+fn latency_once(engine: &dyn InferenceEngine, text: &str) -> Result<f64> {
     for _ in 0..WARMUP {
         engine.embed(text)?;
     }
-    let mut samples = Vec::with_capacity(LATENCY_SAMPLES);
+    let mut s = Vec::with_capacity(LATENCY_SAMPLES);
     for _ in 0..LATENCY_SAMPLES {
         let t = Instant::now();
         engine.embed(text)?;
-        samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        s.push(t.elapsed().as_secs_f64() * 1000.0);
     }
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-    let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let var = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (samples.len() - 1) as f64;
-    let std = var.sqrt();
-    let moe = 1.96 * std / (samples.len() as f64).sqrt();
-    let approx_tokens = text.split_whitespace().count();
-
-    Ok(Measurement::Latency {
-        engine: name.to_string(),
-        seq_label: label.to_string(),
-        approx_tokens,
-        samples: samples.len(),
-        mean_ms: mean,
-        p50_ms: percentile(&samples, 50.0),
-        p95_ms: percentile(&samples, 95.0),
-        p99_ms: percentile(&samples, 99.0),
-        rel_moe_pct: if mean > 0.0 { moe / mean * 100.0 } else { 0.0 },
-    })
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Ok(percentile(&s, 50.0))
 }
 
-fn bench_throughput(engine: &dyn InferenceEngine, name: &str, batch: usize) -> Result<Measurement> {
-    let corpus = embed_core::load_corpus("data/corpus.sample.txt").unwrap_or_default();
-    let base = if corpus.is_empty() {
-        vec!["a specimen note".to_string()]
-    } else {
-        corpus
-    };
+/// One throughput measurement: sentences/second over THROUGHPUT_REPS batches.
+fn throughput_once(engine: &dyn InferenceEngine, batch: usize, corpus: &[String]) -> Result<f64> {
+    let fallback = [String::from("a specimen note")];
+    let base: &[String] = if corpus.is_empty() { &fallback } else { corpus };
     let texts: Vec<String> = (0..batch).map(|i| base[i % base.len()].clone()).collect();
-
-    for _ in 0..WARMUP.min(5) {
+    for _ in 0..WARMUP.min(3) {
         engine.embed_batch(&texts)?;
     }
     let t = Instant::now();
     for _ in 0..THROUGHPUT_REPS {
         engine.embed_batch(&texts)?;
     }
-    let elapsed = t.elapsed().as_secs_f64();
-    let sps = (batch * THROUGHPUT_REPS) as f64 / elapsed;
+    Ok((batch * THROUGHPUT_REPS) as f64 / t.elapsed().as_secs_f64())
+}
 
-    Ok(Measurement::Throughput {
-        engine: name.to_string(),
-        batch,
-        reps: THROUGHPUT_REPS,
-        sentences_per_sec: sps,
-    })
+fn zip_ratio(num: &[f64], den: &[f64]) -> Vec<f64> {
+    num.iter()
+        .zip(den)
+        .filter(|(_, &d)| d > 0.0)
+        .map(|(&n, &d)| n / d)
+        .collect()
+}
+
+fn agg(mut v: Vec<f64>) -> Agg {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p25 = percentile(&v, 25.0);
+    let p75 = percentile(&v, 75.0);
+    Agg {
+        median: percentile(&v, 50.0),
+        p25,
+        p75,
+        iqr: p75 - p25,
+        n: v.len(),
+    }
+}
+
+/// Distinguishable when the speedup IQR excludes 1.0 (effect > spread).
+fn decide(speedup: &Agg) -> (bool, String) {
+    if speedup.p25 > 1.0 {
+        (true, CANDLE.to_string())
+    } else if speedup.p75 < 1.0 {
+        (true, BURN.to_string())
+    } else {
+        (false, "tie".to_string())
+    }
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
@@ -235,7 +298,48 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
+fn print_summary(latency: &[LatencyRec], throughput: &[ThroughputRec]) {
+    eprintln!("\n=== LATENCY p50 (ms), median [IQR] ===");
+    for r in latency {
+        eprintln!(
+            "  {:6}  candle {:6.2} [{:.2}]   burn {:6.2} [{:.2}]   {:.2}x -> {}",
+            r.seq_label,
+            r.candle_ms.median,
+            r.candle_ms.iqr,
+            r.burn_ms.median,
+            r.burn_ms.iqr,
+            r.candle_speedup_x.median,
+            if r.distinguishable { &r.faster } else { "tie" }
+        );
+    }
+    eprintln!("\n=== THROUGHPUT (sent/s), median [IQR] ===");
+    for r in throughput {
+        eprintln!(
+            "  b={:<3} candle {:6.0} [{:.0}]   burn {:6.0} [{:.0}]   {:.2}x -> {}",
+            r.batch,
+            r.candle_sps.median,
+            r.candle_sps.iqr,
+            r.burn_sps.median,
+            r.burn_sps.iqr,
+            r.candle_speedup_x.median,
+            if r.distinguishable { &r.faster } else { "tie" }
+        );
+    }
+}
+
+fn load_engines() -> Result<(CandleEngine, BurnEngine)> {
+    let model_dir = "data/models/all-MiniLM-L6-v2";
+    let candle = CandleEngine::load(model_dir)?;
+    let burn = BurnEngine::load(model_dir)?;
+    candle.embed("probe")?;
+    burn.embed("probe")?;
+    Ok((candle, burn))
+}
+
 fn capture_env() -> Environment {
+    let on_ac = cmd("pmset", &["-g", "batt"])
+        .map(|s| s.contains("AC Power"))
+        .unwrap_or(false);
     Environment {
         cpu: cmd("sysctl", &["-n", "machdep.cpu.brand_string"]).unwrap_or_default(),
         cores: std::thread::available_parallelism()
@@ -244,6 +348,7 @@ fn capture_env() -> Environment {
         os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
         rustc: cmd("rustc", &["--version"]).unwrap_or_default(),
         rayon_threads: std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "unset".to_string()),
+        on_ac_power: on_ac,
         candle_version: CANDLE_VERSION.to_string(),
         burn_version: BURN_VERSION.to_string(),
     }
