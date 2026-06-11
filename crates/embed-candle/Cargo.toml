@@ -11,8 +11,8 @@ metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
 [dependencies]
 embed-core.workspace = true
 anyhow.workspace = true
-candle-core = "0.9"
-candle-nn = "0.9"
+candle-core = { version = "0.9", features = ["accelerate"] }
+candle-nn = { version = "0.9", features = ["accelerate"] }
 candle-transformers = "0.9"
 tokenizers = "0.21"
 hf-hub = "0.4"

@@ -6,32 +6,32 @@
 <line x1="70" y1="320.0" x2="660" y2="320.0" stroke="#eee"/>
 <text x="62" y="324.0" text-anchor="end" fill="#555">0</text>
 <line x1="70" y1="264.0" x2="660" y2="264.0" stroke="#eee"/>
-<text x="62" y="268.0" text-anchor="end" fill="#555">45</text>
+<text x="62" y="268.0" text-anchor="end" fill="#555">150</text>
 <line x1="70" y1="208.0" x2="660" y2="208.0" stroke="#eee"/>
-<text x="62" y="212.0" text-anchor="end" fill="#555">91</text>
+<text x="62" y="212.0" text-anchor="end" fill="#555">300</text>
 <line x1="70" y1="152.0" x2="660" y2="152.0" stroke="#eee"/>
-<text x="62" y="156.0" text-anchor="end" fill="#555">136</text>
+<text x="62" y="156.0" text-anchor="end" fill="#555">449</text>
 <line x1="70" y1="96.0" x2="660" y2="96.0" stroke="#eee"/>
-<text x="62" y="100.0" text-anchor="end" fill="#555">181</text>
+<text x="62" y="100.0" text-anchor="end" fill="#555">599</text>
 <line x1="70" y1="40.0" x2="660" y2="40.0" stroke="#eee"/>
-<text x="62" y="44.0" text-anchor="end" fill="#555">226</text>
+<text x="62" y="44.0" text-anchor="end" fill="#555">749</text>
 <text x="18" y="180" text-anchor="middle" fill="#555" transform="rotate(-90 18 180)">sentences / sec</text>
 <text x="129.0" y="340" text-anchor="middle" fill="#555">b=1</text>
 <text x="247.0" y="340" text-anchor="middle" fill="#555">b=8</text>
 <text x="365.0" y="340" text-anchor="middle" fill="#555">b=16</text>
 <text x="483.0" y="340" text-anchor="middle" fill="#555">b=32</text>
 <text x="601.0" y="340" text-anchor="middle" fill="#555">b=64</text>
-<circle cx="129.0" cy="178.0" r="3" fill="#2c7fb8"/>
-<circle cx="247.0" cy="86.7" r="3" fill="#2c7fb8"/>
-<circle cx="365.0" cy="97.4" r="3" fill="#2c7fb8"/>
-<circle cx="483.0" cy="96.6" r="3" fill="#2c7fb8"/>
-<circle cx="601.0" cy="100.7" r="3" fill="#2c7fb8"/>
-<polyline points="129.0,178.0 247.0,86.7 365.0,97.4 483.0,96.6 601.0,100.7" fill="none" stroke="#2c7fb8" stroke-width="2"/>
-<circle cx="129.0" cy="204.4" r="3" fill="#de8a26"/>
-<circle cx="247.0" cy="129.0" r="3" fill="#de8a26"/>
-<circle cx="365.0" cy="148.2" r="3" fill="#de8a26"/>
-<circle cx="483.0" cy="144.7" r="3" fill="#de8a26"/>
-<circle cx="601.0" cy="147.5" r="3" fill="#de8a26"/>
-<polyline points="129.0,204.4 247.0,129.0 365.0,148.2 483.0,144.7 601.0,147.5" fill="none" stroke="#de8a26" stroke-width="2"/>
+<circle cx="129.0" cy="233.7" r="3" fill="#2c7fb8"/>
+<circle cx="247.0" cy="103.4" r="3" fill="#2c7fb8"/>
+<circle cx="365.0" cy="99.1" r="3" fill="#2c7fb8"/>
+<circle cx="483.0" cy="86.7" r="3" fill="#2c7fb8"/>
+<circle cx="601.0" cy="89.8" r="3" fill="#2c7fb8"/>
+<polyline points="129.0,233.7 247.0,103.4 365.0,99.1 483.0,86.7 601.0,89.8" fill="none" stroke="#2c7fb8" stroke-width="2"/>
+<circle cx="129.0" cy="270.0" r="3" fill="#de8a26"/>
+<circle cx="247.0" cy="200.5" r="3" fill="#de8a26"/>
+<circle cx="365.0" cy="201.6" r="3" fill="#de8a26"/>
+<circle cx="483.0" cy="192.9" r="3" fill="#de8a26"/>
+<circle cx="601.0" cy="194.0" r="3" fill="#de8a26"/>
+<polyline points="129.0,270.0 247.0,200.5 365.0,201.6 483.0,192.9 601.0,194.0" fill="none" stroke="#de8a26" stroke-width="2"/>
 <rect x="430" y="36" width="12" height="12" fill="#2c7fb8"/><text x="446" y="47">candle-cpu</text><rect x="540" y="36" width="12" height="12" fill="#de8a26"/><text x="556" y="47">burn-ndarray</text>
 </svg>

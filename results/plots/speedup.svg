@@ -24,14 +24,14 @@
 <text x="475.6" y="340" text-anchor="middle" fill="#555">thr b=16</text>
 <text x="549.4" y="340" text-anchor="middle" fill="#555">thr b=32</text>
 <text x="623.1" y="340" text-anchor="middle" fill="#555">thr b=64</text>
-<line x1="70" y1="180.0" x2="660" y2="180.0" stroke="#c00" stroke-dasharray="4"/>
-<text x="658" y="176.0" text-anchor="end" fill="#c00">1.0 (tie)</text>
-<rect x="88.4" y="122.9" width="36.9" height="197.1" fill="#2c7fb8" opacity="1"/>
-<rect x="162.2" y="140.8" width="36.9" height="179.2" fill="#2c7fb8" opacity="1"/>
-<rect x="235.9" y="184.1" width="36.9" height="135.9" fill="#de8a26" opacity="1"/>
-<rect x="309.7" y="144.9" width="36.9" height="175.1" fill="#2c7fb8" opacity="1"/>
-<rect x="383.4" y="150.4" width="36.9" height="169.6" fill="#2c7fb8" opacity="1"/>
-<rect x="457.2" y="137.0" width="36.9" height="183.0" fill="#2c7fb8" opacity="1"/>
-<rect x="530.9" y="141.9" width="36.9" height="178.1" fill="#2c7fb8" opacity="1"/>
-<rect x="604.7" y="140.2" width="36.9" height="179.8" fill="#2c7fb8" opacity="1"/>
+<line x1="70" y1="188.5" x2="660" y2="188.5" stroke="#c00" stroke-dasharray="4"/>
+<text x="658" y="184.5" text-anchor="end" fill="#c00">1.0 (tie)</text>
+<rect x="88.4" y="91.8" width="36.9" height="228.2" fill="#2c7fb8" opacity="1"/>
+<rect x="162.2" y="65.5" width="36.9" height="254.5" fill="#2c7fb8" opacity="1"/>
+<rect x="235.9" y="85.1" width="36.9" height="234.9" fill="#2c7fb8" opacity="1"/>
+<rect x="309.7" y="93.1" width="36.9" height="226.9" fill="#2c7fb8" opacity="1"/>
+<rect x="383.4" y="78.8" width="36.9" height="241.2" fill="#2c7fb8" opacity="1"/>
+<rect x="457.2" y="71.9" width="36.9" height="248.1" fill="#2c7fb8" opacity="1"/>
+<rect x="530.9" y="75.6" width="36.9" height="244.4" fill="#2c7fb8" opacity="1"/>
+<rect x="604.7" y="79.0" width="36.9" height="241.0" fill="#2c7fb8" opacity="1"/>
 </svg>

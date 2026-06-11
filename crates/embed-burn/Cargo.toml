@@ -11,7 +11,7 @@ wgpu = ["burn/wgpu"]
 [dependencies]
 embed-core.workspace = true
 anyhow.workspace = true
-burn = { version = "0.21", features = ["ndarray"] }
+burn = { version = "0.21", features = ["ndarray", "accelerate"] }
 burn-store = "0.21"
 tokenizers = "0.21"
 hf-hub = "0.4"
