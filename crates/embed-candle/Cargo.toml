@@ -8,5 +8,9 @@ authors.workspace = true
 [dependencies]
 embed-core.workspace = true
 anyhow.workspace = true
-# TODO(phase-0): add the real Candle stack to implement the forward pass:
-#   candle-core, candle-nn, candle-transformers (BERT), tokenizers, hf-hub
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
+tokenizers = "0.21"
+hf-hub = "0.4"
+serde_json = "1"
