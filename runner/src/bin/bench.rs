@@ -1,20 +1,24 @@
-//! Phase 1 benchmark harness (interleaved, paired).
+//! Phase 1 benchmark harness (interleaved, N-engine).
 //!
-//! Two scenarios (design: MLPerf single-stream + offline mapped to NAHPU usage):
+//! Compares an arbitrary set of embedding engines (currently candle, burn, ort)
+//! over two scenarios (design: MLPerf single-stream + offline, mapped to NAHPU):
 //!   - `latency_single` — interactive search, one embed at a time (batch=1),
 //!     over short/medium/long inputs.
 //!   - `throughput`     — bulk indexing, embed a batch, swept over batch sizes.
 //!
 //! Why interleaved: an unpinned laptop (Apple Silicon P/E cores, power mgmt)
 //! drifts run-to-run more than 5%, so absolute single-run reproducibility is not
-//! achievable here. Instead we run N trials; within each trial both engines are
-//! measured back-to-back (order alternates per trial) so they share identical
-//! conditions. We then report median +/- IQR across trials, and the per-trial
-//! speedup ratio. The decision rule: engines are *distinguishable* when the IQR
-//! of the speedup ratio excludes 1.0 (effect size exceeds run-to-run spread).
+//! achievable here. Instead we run N trials; within each trial *every* engine is
+//! measured back-to-back, and the starting engine rotates per trial so order/
+//! drift bias cancels. We then report each engine's median +/- IQR across
+//! trials, plus the per-trial pairwise speedup ratio. Decision rule: a pair is
+//! *distinguishable* when the IQR of its speedup ratio excludes 1.0 (effect size
+//! exceeds run-to-run spread).
 //!
 //! Run pinned + on AC: `RAYON_NUM_THREADS=1 cargo run --release -p runner --bin bench`.
+//! GPU peers: `cargo run --release -p runner --bin bench --features gpu -- gpu`.
 
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::time::Instant;
 
@@ -24,6 +28,7 @@ use embed_burn::BurnEngine;
 use embed_burn::BurnWgpuEngine;
 use embed_candle::CandleEngine;
 use embed_core::InferenceEngine;
+use embed_ort::OrtEngine;
 use serde::Serialize;
 
 const TRIALS: usize = 10;
@@ -34,12 +39,13 @@ const BATCH_SIZES: &[usize] = &[1, 8, 16, 32, 64];
 
 const CANDLE_VERSION: &str = "0.9";
 const BURN_VERSION: &str = "0.21";
+const ORT_VERSION: &str = "2.0.0-rc.10";
 
 #[derive(Serialize)]
 struct Report {
     timestamp: String,
     mode: String,
-    engines: [String; 2],
+    engines: Vec<String>,
     environment: Environment,
     config: Config,
     latency: Vec<LatencyRec>,
@@ -64,10 +70,11 @@ struct Environment {
     on_ac_power: bool,
     candle_version: String,
     burn_version: String,
+    ort_version: String,
 }
 
 /// Aggregate of one metric across trials.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct Agg {
     median: f64,
     p25: f64,
@@ -76,33 +83,46 @@ struct Agg {
     n: usize,
 }
 
+/// Per-trial speedup ratio between two engines, defined so >1 favours `a`.
+#[derive(Serialize)]
+struct PairRec {
+    a: String,
+    b: String,
+    speedup_x: Agg,
+    distinguishable: bool,
+    faster: String,
+}
+
 #[derive(Serialize)]
 struct LatencyRec {
     seq_label: String,
     approx_tokens: usize,
-    candle_ms: Agg,
-    burn_ms: Agg,
-    /// Per-trial burn_ms / candle_ms (>1 means Candle is faster).
-    candle_speedup_x: Agg,
-    distinguishable: bool,
-    faster: String,
+    /// engine name -> latency aggregate (ms, lower is better).
+    ms: BTreeMap<String, Agg>,
+    fastest: String,
+    pairwise: Vec<PairRec>,
 }
 
 #[derive(Serialize)]
 struct ThroughputRec {
     batch: usize,
-    candle_sps: Agg,
-    burn_sps: Agg,
-    /// Per-trial candle_sps / burn_sps (>1 means Candle is faster).
-    candle_speedup_x: Agg,
-    distinguishable: bool,
-    faster: String,
+    /// engine name -> throughput aggregate (sentences/s, higher is better).
+    sps: BTreeMap<String, Agg>,
+    fastest: String,
+    pairwise: Vec<PairRec>,
+}
+
+struct EngineHandle {
+    name: String,
+    engine: Box<dyn InferenceEngine>,
 }
 
 fn main() -> Result<()> {
     let mode = std::env::args().nth(1).unwrap_or_else(|| "cpu".to_string());
-    let (cname, candle, bname, burn) = load_engines(&mode)?;
-    eprintln!("mode={mode}: {cname} vs {bname}");
+    let engines = load_engines(&mode)?;
+    let names: Vec<String> = engines.iter().map(|e| e.name.clone()).collect();
+    let e = engines.len();
+    eprintln!("mode={mode}: {}", names.join(" vs "));
 
     let inputs = [
         ("short", "Dark brown iris."),
@@ -121,32 +141,26 @@ fn main() -> Result<()> {
     ];
     let corpus = embed_core::load_corpus("data/corpus.sample.txt").unwrap_or_default();
 
-    // Per-trial samples, keyed by scenario; index 0 = candle, 1 = burn.
-    let mut lat: Vec<[Vec<f64>; 2]> = (0..inputs.len()).map(|_| [vec![], vec![]]).collect();
-    let mut thr: Vec<[Vec<f64>; 2]> = (0..BATCH_SIZES.len()).map(|_| [vec![], vec![]]).collect();
+    // Per-trial samples: [scenario][engine] -> Vec<f64> over trials.
+    let mut lat: Vec<Vec<Vec<f64>>> = vec![vec![vec![]; e]; inputs.len()];
+    let mut thr: Vec<Vec<Vec<f64>>> = vec![vec![vec![]; e]; BATCH_SIZES.len()];
 
     for trial in 0..TRIALS {
         eprintln!("trial {}/{}", trial + 1, TRIALS);
-        // Alternate which engine is measured first to cancel order/drift bias.
-        let candle_first = trial % 2 == 0;
+        // Rotate which engine goes first each trial to cancel order/drift bias.
+        let order: Vec<usize> = (0..e).map(|k| (trial + k) % e).collect();
 
         for (i, (_label, text)) in inputs.iter().enumerate() {
-            let (c, b) = measure_pair(
-                candle_first,
-                || latency_once(candle.as_ref(), text),
-                || latency_once(burn.as_ref(), text),
-            )?;
-            lat[i][0].push(c);
-            lat[i][1].push(b);
+            for &idx in &order {
+                let v = latency_once(engines[idx].engine.as_ref(), text)?;
+                lat[i][idx].push(v);
+            }
         }
         for (i, &batch) in BATCH_SIZES.iter().enumerate() {
-            let (c, b) = measure_pair(
-                candle_first,
-                || throughput_once(candle.as_ref(), batch, &corpus),
-                || throughput_once(burn.as_ref(), batch, &corpus),
-            )?;
-            thr[i][0].push(c);
-            thr[i][1].push(b);
+            for &idx in &order {
+                let v = throughput_once(engines[idx].engine.as_ref(), batch, &corpus)?;
+                thr[i][idx].push(v);
+            }
         }
     }
 
@@ -154,17 +168,17 @@ fn main() -> Result<()> {
         .iter()
         .enumerate()
         .map(|(i, (label, text))| {
-            let speedup: Vec<f64> = zip_ratio(&lat[i][1], &lat[i][0]); // burn/candle
-            let s = agg(speedup);
-            let (dist, faster) = decide(&s, &cname, &bname);
+            let ms: BTreeMap<String, Agg> = names
+                .iter()
+                .enumerate()
+                .map(|(k, n)| (n.clone(), agg(lat[i][k].clone())))
+                .collect();
             LatencyRec {
                 seq_label: label.to_string(),
                 approx_tokens: text.split_whitespace().count(),
-                candle_ms: agg(lat[i][0].clone()),
-                burn_ms: agg(lat[i][1].clone()),
-                candle_speedup_x: s,
-                distinguishable: dist,
-                faster,
+                fastest: fastest_by(&ms, Metric::Latency),
+                pairwise: pairwise(&names, &lat[i], Metric::Latency),
+                ms,
             }
         })
         .collect();
@@ -173,26 +187,26 @@ fn main() -> Result<()> {
         .iter()
         .enumerate()
         .map(|(i, &batch)| {
-            let speedup: Vec<f64> = zip_ratio(&thr[i][0], &thr[i][1]); // candle/burn
-            let s = agg(speedup);
-            let (dist, faster) = decide(&s, &cname, &bname);
+            let sps: BTreeMap<String, Agg> = names
+                .iter()
+                .enumerate()
+                .map(|(k, n)| (n.clone(), agg(thr[i][k].clone())))
+                .collect();
             ThroughputRec {
                 batch,
-                candle_sps: agg(thr[i][0].clone()),
-                burn_sps: agg(thr[i][1].clone()),
-                candle_speedup_x: s,
-                distinguishable: dist,
-                faster,
+                fastest: fastest_by(&sps, Metric::Throughput),
+                pairwise: pairwise(&names, &thr[i], Metric::Throughput),
+                sps,
             }
         })
         .collect();
 
-    print_summary(&latency, &throughput);
+    print_summary(&names, &latency, &throughput);
 
     let report = Report {
         timestamp: cmd("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"]).unwrap_or_default(),
         mode: mode.clone(),
-        engines: [cname.clone(), bname.clone()],
+        engines: names,
         environment: capture_env(),
         config: Config {
             trials: TRIALS,
@@ -213,21 +227,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Measure two closures adjacently, honoring the alternating order.
-fn measure_pair(
-    candle_first: bool,
-    candle: impl Fn() -> Result<f64>,
-    burn: impl Fn() -> Result<f64>,
-) -> Result<(f64, f64)> {
-    if candle_first {
-        let c = candle()?;
-        let b = burn()?;
-        Ok((c, b))
-    } else {
-        let b = burn()?;
-        let c = candle()?;
-        Ok((c, b))
-    }
+#[derive(Clone, Copy)]
+enum Metric {
+    /// Lower is better (ms).
+    Latency,
+    /// Higher is better (sentences/s).
+    Throughput,
 }
 
 /// One latency measurement: median of LATENCY_SAMPLES single embeds (ms).
@@ -260,6 +265,47 @@ fn throughput_once(engine: &dyn InferenceEngine, batch: usize, corpus: &[String]
     Ok((batch * THROUGHPUT_REPS) as f64 / t.elapsed().as_secs_f64())
 }
 
+/// The engine with the best median (min for latency, max for throughput).
+fn fastest_by(stats: &BTreeMap<String, Agg>, metric: Metric) -> String {
+    stats
+        .iter()
+        .min_by(|a, b| {
+            let (x, y) = (a.1.median, b.1.median);
+            match metric {
+                Metric::Latency => x.partial_cmp(&y).unwrap(),
+                Metric::Throughput => y.partial_cmp(&x).unwrap(),
+            }
+        })
+        .map(|(n, _)| n.clone())
+        .unwrap_or_default()
+}
+
+/// Per-trial pairwise speedup ratios for every unordered engine pair.
+fn pairwise(names: &[String], samples: &[Vec<f64>], metric: Metric) -> Vec<PairRec> {
+    let mut out = Vec::new();
+    for i in 0..names.len() {
+        for j in (i + 1)..names.len() {
+            // Define ratio so >1 means `a` (engine i) is faster.
+            let ratio = match metric {
+                // latency: smaller is faster -> b_ms / a_ms
+                Metric::Latency => zip_ratio(&samples[j], &samples[i]),
+                // throughput: larger is faster -> a_sps / b_sps
+                Metric::Throughput => zip_ratio(&samples[i], &samples[j]),
+            };
+            let s = agg(ratio);
+            let (dist, faster) = decide(&s, &names[i], &names[j]);
+            out.push(PairRec {
+                a: names[i].clone(),
+                b: names[j].clone(),
+                speedup_x: s,
+                distinguishable: dist,
+                faster,
+            });
+        }
+    }
+    out
+}
+
 fn zip_ratio(num: &[f64], den: &[f64]) -> Vec<f64> {
     num.iter()
         .zip(den)
@@ -282,12 +328,12 @@ fn agg(mut v: Vec<f64>) -> Agg {
 }
 
 /// Distinguishable when the speedup IQR excludes 1.0 (effect > spread).
-/// Speedup ratio is defined so >1 favors the candle-side engine.
-fn decide(speedup: &Agg, candle_name: &str, burn_name: &str) -> (bool, String) {
+/// Speedup ratio is defined so >1 favours `a`.
+fn decide(speedup: &Agg, a: &str, b: &str) -> (bool, String) {
     if speedup.p25 > 1.0 {
-        (true, candle_name.to_string())
+        (true, a.to_string())
     } else if speedup.p75 < 1.0 {
-        (true, burn_name.to_string())
+        (true, b.to_string())
     } else {
         (false, "tie".to_string())
     }
@@ -307,51 +353,51 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
-fn print_summary(latency: &[LatencyRec], throughput: &[ThroughputRec]) {
-    eprintln!("\n=== LATENCY p50 (ms), median [IQR] ===");
+fn print_summary(names: &[String], latency: &[LatencyRec], throughput: &[ThroughputRec]) {
+    eprintln!("\n=== LATENCY p50 (ms), median [IQR] — * = fastest ===");
     for r in latency {
-        eprintln!(
-            "  {:6}  candle {:6.2} [{:.2}]   burn {:6.2} [{:.2}]   {:.2}x -> {}",
-            r.seq_label,
-            r.candle_ms.median,
-            r.candle_ms.iqr,
-            r.burn_ms.median,
-            r.burn_ms.iqr,
-            r.candle_speedup_x.median,
-            if r.distinguishable { &r.faster } else { "tie" }
-        );
+        eprint!("  {:6}", r.seq_label);
+        for n in names {
+            let a = &r.ms[n];
+            let star = if *n == r.fastest { "*" } else { " " };
+            eprint!("  {n} {:6.2}[{:.2}]{star}", a.median, a.iqr);
+        }
+        eprintln!();
     }
-    eprintln!("\n=== THROUGHPUT (sent/s), median [IQR] ===");
+    eprintln!("\n=== THROUGHPUT (sent/s), median [IQR] — * = fastest ===");
     for r in throughput {
-        eprintln!(
-            "  b={:<3} candle {:6.0} [{:.0}]   burn {:6.0} [{:.0}]   {:.2}x -> {}",
-            r.batch,
-            r.candle_sps.median,
-            r.candle_sps.iqr,
-            r.burn_sps.median,
-            r.burn_sps.iqr,
-            r.candle_speedup_x.median,
-            if r.distinguishable { &r.faster } else { "tie" }
-        );
+        eprint!("  b={:<3}", r.batch);
+        for n in names {
+            let a = &r.sps[n];
+            let star = if *n == r.fastest { "*" } else { " " };
+            eprint!("  {n} {:6.0}[{:.0}]{star}", a.median, a.iqr);
+        }
+        eprintln!();
     }
 }
 
-type Engines = (String, Box<dyn InferenceEngine>, String, Box<dyn InferenceEngine>);
-
-fn load_engines(mode: &str) -> Result<Engines> {
+fn load_engines(mode: &str) -> Result<Vec<EngineHandle>> {
     let dir = "data/models/all-MiniLM-L6-v2";
-    let (cname, candle, bname, burn): Engines = match mode {
+    let mut engines: Vec<EngineHandle> = Vec::new();
+    match mode {
         "gpu" => {
             #[cfg(feature = "gpu")]
             {
                 let c = CandleEngine::load_metal(dir)?;
                 let b = BurnWgpuEngine::load_wgpu(dir)?;
-                (
-                    c.name().to_string(),
-                    Box::new(c) as Box<dyn InferenceEngine>,
-                    b.name().to_string(),
-                    Box::new(b) as Box<dyn InferenceEngine>,
-                )
+                let o = OrtEngine::load_coreml(dir)?;
+                engines.push(EngineHandle {
+                    name: c.name().to_string(),
+                    engine: Box::new(c),
+                });
+                engines.push(EngineHandle {
+                    name: b.name().to_string(),
+                    engine: Box::new(b),
+                });
+                engines.push(EngineHandle {
+                    name: o.name().to_string(),
+                    engine: Box::new(o),
+                });
             }
             #[cfg(not(feature = "gpu"))]
             {
@@ -361,17 +407,26 @@ fn load_engines(mode: &str) -> Result<Engines> {
         _ => {
             let c = CandleEngine::load(dir)?;
             let b = BurnEngine::load(dir)?;
-            (
-                c.name().to_string(),
-                Box::new(c) as Box<dyn InferenceEngine>,
-                b.name().to_string(),
-                Box::new(b) as Box<dyn InferenceEngine>,
-            )
+            let o = OrtEngine::load(dir)?;
+            engines.push(EngineHandle {
+                name: c.name().to_string(),
+                engine: Box::new(c),
+            });
+            engines.push(EngineHandle {
+                name: b.name().to_string(),
+                engine: Box::new(b),
+            });
+            engines.push(EngineHandle {
+                name: o.name().to_string(),
+                engine: Box::new(o),
+            });
         }
-    };
-    candle.embed("probe")?;
-    burn.embed("probe")?;
-    Ok((cname, candle, bname, burn))
+    }
+    // Probe each engine once so the first real measurement isn't a cold path.
+    for h in &engines {
+        h.engine.embed("probe")?;
+    }
+    Ok(engines)
 }
 
 fn capture_env() -> Environment {
@@ -389,6 +444,7 @@ fn capture_env() -> Environment {
         on_ac_power: on_ac,
         candle_version: CANDLE_VERSION.to_string(),
         burn_version: BURN_VERSION.to_string(),
+        ort_version: ORT_VERSION.to_string(),
     }
 }
 

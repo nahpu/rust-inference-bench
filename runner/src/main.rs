@@ -1,6 +1,6 @@
-//! Phase 0 parity check: confirm Candle and Burn produce equivalent embeddings
-//! for the same input. Until this passes, any speed comparison is apples-to-
-//! oranges, so this runs first.
+//! Phase 0 parity check: confirm every engine produces equivalent embeddings for
+//! the same input. Until this passes, any speed comparison is apples-to-oranges,
+//! so this runs first. With three engines we check all pairs.
 //!
 //! Usage: `cargo run -p runner -- [corpus_path] [model_dir]`
 
@@ -8,6 +8,7 @@ use anyhow::Result;
 use embed_burn::BurnEngine;
 use embed_candle::CandleEngine;
 use embed_core::{cosine_similarity, load_corpus, Embedding, InferenceEngine};
+use embed_ort::OrtEngine;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -24,6 +25,7 @@ fn main() -> Result<()> {
     let engines: Vec<Box<dyn InferenceEngine>> = vec![
         Box::new(CandleEngine::load(&model_dir)?),
         Box::new(BurnEngine::load(&model_dir)?),
+        Box::new(OrtEngine::load(&model_dir)?),
     ];
 
     // Embed the whole corpus with each engine that is actually implemented.
@@ -43,19 +45,26 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Compare the first two engines sentence-by-sentence.
-    let (name_a, a) = &outputs[0];
-    let (name_b, b) = &outputs[1];
-    let min_sim = a
-        .iter()
-        .zip(b)
-        .map(|(x, y)| cosine_similarity(x, y))
-        .fold(f32::MAX, f32::min);
+    // Compare every pair sentence-by-sentence; gate on the worst pair.
+    let mut overall_min = f32::MAX;
+    println!();
+    for i in 0..outputs.len() {
+        for j in (i + 1)..outputs.len() {
+            let (name_a, a) = &outputs[i];
+            let (name_b, b) = &outputs[j];
+            let min_sim = a
+                .iter()
+                .zip(b)
+                .map(|(x, y)| cosine_similarity(x, y))
+                .fold(f32::MAX, f32::min);
+            overall_min = overall_min.min(min_sim);
+            println!("{name_a} vs {name_b}: min cosine similarity = {min_sim:.6}");
+        }
+    }
 
-    println!("\n{name_a} vs {name_b}: min cosine similarity = {min_sim:.6}");
     println!(
-        "Parity {}",
-        if min_sim > 0.999 { "PASS" } else { "FAIL" }
+        "\nParity {} (worst pair min cosine = {overall_min:.6})",
+        if overall_min > 0.999 { "PASS" } else { "FAIL" }
     );
     Ok(())
 }

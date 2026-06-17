@@ -1,0 +1,43 @@
+{
+  "environment": {
+    "cpu": "Apple M4",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "rayon_threads": "1",
+    "on_ac_power": true
+  },
+  "cold_start_ms": {
+    "candle-cpu": {
+      "median": 30.0,
+      "min": 25.6
+    },
+    "burn-ndarray": {
+      "median": 44.7,
+      "min": 40.7
+    },
+    "ort-cpu": {
+      "median": 83.0,
+      "min": 78.8
+    }
+  },
+  "peak_rss_mb": {
+    "candle-cpu": {
+      "median": 198.6
+    },
+    "burn-ndarray": {
+      "median": 245.4
+    },
+    "ort-cpu": {
+      "median": 234.4
+    }
+  },
+  "binary_size_mb": {
+    "candle-cpu": 7.2,
+    "burn-ndarray": 10.3,
+    "ort-cpu": 21.2
+  },
+  "clean_build_s": {
+    "candle-cpu": 144.5,
+    "burn-ndarray": 146.8,
+    "ort-cpu": 86.5
+  }
+}

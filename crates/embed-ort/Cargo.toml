@@ -1,0 +1,20 @@
+[package]
+name = "embed-ort"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+# CoreML execution provider (GPU/ANE on macOS). Phase 2 GPU mode.
+coreml = ["ort/coreml"]
+
+[dependencies]
+embed-core.workspace = true
+anyhow.workspace = true
+# ONNX Runtime bindings. `download-binaries` (default) pulls a prebuilt ORT, so
+# no system install is needed; `ndarray` gives us typed tensor extraction.
+ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
+ndarray = "0.16"
+tokenizers = "0.21"
+hf-hub = "0.4"

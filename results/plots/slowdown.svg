@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="380" font-family="sans-serif" font-size="13">
+<rect width="760" height="380" fill="white"/>
+<text x="380.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Slowdown vs fastest engine — Apple M4, 1 thread, AC — 10 trials (median, IQR whiskers)</text>
+<line x1="70" y1="320" x2="740" y2="320" stroke="#333"/>
+<line x1="70" y1="320" x2="70" y2="40" stroke="#333"/>
+<line x1="70" y1="320.0" x2="740" y2="320.0" stroke="#eee"/>
+<text x="62" y="324.0" text-anchor="end" fill="#555">0</text>
+<line x1="70" y1="264.0" x2="740" y2="264.0" stroke="#eee"/>
+<text x="62" y="268.0" text-anchor="end" fill="#555">1</text>
+<line x1="70" y1="208.0" x2="740" y2="208.0" stroke="#eee"/>
+<text x="62" y="212.0" text-anchor="end" fill="#555">2</text>
+<line x1="70" y1="152.0" x2="740" y2="152.0" stroke="#eee"/>
+<text x="62" y="156.0" text-anchor="end" fill="#555">3</text>
+<line x1="70" y1="96.0" x2="740" y2="96.0" stroke="#eee"/>
+<text x="62" y="100.0" text-anchor="end" fill="#555">4</text>
+<line x1="70" y1="40.0" x2="740" y2="40.0" stroke="#eee"/>
+<text x="62" y="44.0" text-anchor="end" fill="#555">5</text>
+<text x="18" y="180" text-anchor="middle" fill="#555" transform="rotate(-90 18 180)">slowdown vs fastest (x)</text>
+<text x="111.9" y="340" text-anchor="middle" fill="#555">short</text>
+<text x="195.6" y="340" text-anchor="middle" fill="#555">medium</text>
+<text x="279.4" y="340" text-anchor="middle" fill="#555">long</text>
+<text x="363.1" y="340" text-anchor="middle" fill="#555">thr b=1</text>
+<text x="446.9" y="340" text-anchor="middle" fill="#555">thr b=8</text>
+<text x="530.6" y="340" text-anchor="middle" fill="#555">thr b=16</text>
+<text x="614.4" y="340" text-anchor="middle" fill="#555">thr b=32</text>
+<text x="698.1" y="340" text-anchor="middle" fill="#555">thr b=64</text>
+<line x1="70" y1="259.8" x2="740" y2="259.8" stroke="#c00" stroke-dasharray="4"/>
+<text x="738" y="255.8" text-anchor="end" fill="#c00">1.0 (fastest)</text>
+<rect x="78.4" y="207.5" width="22.3" height="112.5" fill="#2c7fb8"/>
+<rect x="100.7" y="65.5" width="22.3" height="254.5" fill="#de8a26"/>
+<rect x="123.0" y="259.8" width="22.3" height="60.2" fill="#41ab5d"/>
+<rect x="162.1" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="184.5" y="191.0" width="22.3" height="129.0" fill="#de8a26"/>
+<rect x="206.8" y="259.1" width="22.3" height="60.9" fill="#41ab5d"/>
+<rect x="245.9" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="268.2" y="207.3" width="22.3" height="112.7" fill="#de8a26"/>
+<rect x="290.5" y="224.2" width="22.3" height="95.8" fill="#41ab5d"/>
+<rect x="329.6" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="352.0" y="186.8" width="22.3" height="133.2" fill="#de8a26"/>
+<rect x="374.3" y="256.8" width="22.3" height="63.2" fill="#41ab5d"/>
+<rect x="413.4" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="435.7" y="204.3" width="22.3" height="115.7" fill="#de8a26"/>
+<rect x="458.0" y="209.0" width="22.3" height="111.0" fill="#41ab5d"/>
+<rect x="497.1" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="519.5" y="202.7" width="22.3" height="117.3" fill="#de8a26"/>
+<rect x="541.8" y="191.2" width="22.3" height="128.8" fill="#41ab5d"/>
+<rect x="580.9" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="603.2" y="212.5" width="22.3" height="107.5" fill="#de8a26"/>
+<rect x="625.5" y="196.2" width="22.3" height="123.8" fill="#41ab5d"/>
+<rect x="664.6" y="259.8" width="22.3" height="60.2" fill="#2c7fb8"/>
+<rect x="687.0" y="211.8" width="22.3" height="108.2" fill="#de8a26"/>
+<rect x="709.3" y="191.8" width="22.3" height="128.2" fill="#41ab5d"/>
+<rect x="70" y="36" width="12" height="12" fill="#2c7fb8"/><text x="86" y="47">candle-cpu</text><rect x="200" y="36" width="12" height="12" fill="#de8a26"/><text x="216" y="47">burn-ndarray</text><rect x="330" y="36" width="12" height="12" fill="#41ab5d"/><text x="346" y="47">ort-cpu</text>
+</svg>
