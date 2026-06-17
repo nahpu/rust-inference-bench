@@ -12,7 +12,7 @@ members = [
 edition = "2021"
 license = "MIT"
 authors = ["Danna"]
-repository = "https://github.com/dannaward/candle-vs-burn-bench"
+repository = "https://github.com/dannaward/rust-inference-bench"
 
 [workspace.dependencies]
 anyhow = "1"

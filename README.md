@@ -1,8 +1,8 @@
-# candle-vs-burn-bench
+# rust-inference-bench
 
 A reproducible benchmark comparing Rust ML inference engines — **Candle**,
 **Burn**, and **ONNX Runtime** (`ort`) — on a sentence-embedding workload, to
-inform the NAHPU framework choice. (Repo name predates the ORT addition.)
+inform the NAHPU framework choice.
 
 ## Scope (intentional constraints)
 
