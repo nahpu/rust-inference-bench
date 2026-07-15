@@ -12,3 +12,7 @@
 
 # OS noise
 .DS_Store
+
+# GitHub Wiki page sources — staged here, published to the .wiki.git repo
+# (not tracked in the code repo to avoid duplicating the wiki content).
+/wiki/
