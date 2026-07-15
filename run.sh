@@ -117,6 +117,40 @@ join_feats() {
     echo "$out"
 }
 
+# ---- per-machine results folder -------------------------------------------
+# Every result lands in results/<os>-<arch>-<cpu> so runs from different
+# machines (and people) can be committed side-by-side without colliding.
+MACHINE="$("$PY" scripts/machine-key.py)"
+export BENCH_RESULTS_DIR="results/$MACHINE"
+mkdir -p "$BENCH_RESULTS_DIR/plots"
+log "results folder: $BENCH_RESULTS_DIR"
+
+# One-time migration: move any legacy flat results/*.json into the per-machine
+# folder they belong to (routed by each file's own environment block), and the
+# old flat plots/ under the current machine. Idempotent — a no-op once migrated.
+migrate_legacy() {
+    local moved=0 f key
+    for f in results/*.json; do
+        [ -e "$f" ] || continue
+        key="$("$PY" scripts/machine-key.py "$f" 2>/dev/null)" || continue
+        [ -n "$key" ] || continue
+        mkdir -p "results/$key"
+        mv "$f" "results/$key/" && moved=$((moved + 1))
+    done
+    if ls results/plots/*.svg >/dev/null 2>&1; then
+        mkdir -p "$BENCH_RESULTS_DIR/plots"
+        mv results/plots/*.svg "$BENCH_RESULTS_DIR/plots/" 2>/dev/null || true
+        if ls results/plots/gpu/*.svg >/dev/null 2>&1; then
+            mkdir -p "$BENCH_RESULTS_DIR/plots/gpu"
+            mv results/plots/gpu/*.svg "$BENCH_RESULTS_DIR/plots/gpu/" 2>/dev/null || true
+            rmdir results/plots/gpu 2>/dev/null || true
+        fi
+        rmdir results/plots 2>/dev/null || true
+    fi
+    [ "$moved" -gt 0 ] && log "migrated $moved legacy result file(s) into per-machine folders"
+}
+migrate_legacy
+
 # ---- pinning + trial count ------------------------------------------------
 export RAYON_NUM_THREADS=1
 [ -n "$TRIALS" ] && export BENCH_TRIALS="$TRIALS"
@@ -164,18 +198,18 @@ fi
 # ---- 6. plots -------------------------------------------------------------
 if [ "$DO_PLOTS" -eq 1 ]; then
     log "plots"
-    latest() { ls -t results/"$1"-*.json 2>/dev/null | head -1; }
+    latest() { ls -t "$BENCH_RESULTS_DIR"/"$1"-*.json 2>/dev/null | head -1; }
     cpu_json="$(latest cpu)"
-    [ -n "$cpu_json" ] && "$PY" scripts/plot.py "$cpu_json" results/plots || warn "no CPU results to plot"
+    [ -n "$cpu_json" ] && "$PY" scripts/plot.py "$cpu_json" "$BENCH_RESULTS_DIR/plots" || warn "no CPU results to plot"
     if [ "$GPU" != "off" ]; then
         gpu_json="$(latest gpu)"
-        [ -n "$gpu_json" ] && "$PY" scripts/plot.py "$gpu_json" results/plots/gpu || warn "no GPU results to plot"
+        [ -n "$gpu_json" ] && "$PY" scripts/plot.py "$gpu_json" "$BENCH_RESULTS_DIR/plots/gpu" || warn "no GPU results to plot"
     fi
 else
     log "plots: skipped"
 fi
 
 # ---- summary --------------------------------------------------------------
-log "done — artifacts in results/"
-ls -t results/*.json 2>/dev/null | head -5 | sed 's/^/  /'
-echo "  plots: results/plots/{latency,throughput,slowdown}.svg"
+log "done — artifacts in $BENCH_RESULTS_DIR/"
+ls -t "$BENCH_RESULTS_DIR"/*.json 2>/dev/null | head -5 | sed 's/^/  /'
+echo "  plots: $BENCH_RESULTS_DIR/plots/{latency,throughput,slowdown}.svg"

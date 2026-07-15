@@ -108,6 +108,29 @@ available the GPU phase is skipped with a warning and CPU results still land.
 - For the ORT cross-platform execution-provider matrix (DirectML / OpenVINO /
   NNAPI on non-Mac hardware) see [GUIDE-cross-platform.md](GUIDE-cross-platform.md).
 
+### Results layout
+
+`run.sh` writes every artifact into a per-machine folder keyed by
+`<os>-<arch>-<cpu>`, so runs from different machines (and people) can be committed
+side-by-side without colliding:
+
+```
+results/
+  macos-arm64-apple-m4/
+    cpu-<stamp>-<host>.json
+    gpu-<stamp>-<host>.json
+    secondary-<stamp>-<host>.json
+    plots/{latency,throughput,slowdown}.svg
+    plots/gpu/…
+  linux-x86_64-core-i7-13700k/
+    …
+```
+
+The key is computed by `scripts/machine-key.py` (the single source of truth —
+also used to route legacy files). `run.sh` migrates any old flat `results/*.json`
+into the right per-machine folder on first run. A manual `cargo run` without
+`BENCH_RESULTS_DIR` set falls back to the flat `results/` root.
+
 ### Manual (individual phases)
 
 ```sh

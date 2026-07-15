@@ -233,10 +233,13 @@ fn main() -> Result<()> {
         throughput,
     };
 
-    std::fs::create_dir_all("results")?;
+    // run.sh sets BENCH_RESULTS_DIR to a per-machine folder (results/<os-arch-cpu>);
+    // manual `cargo run` falls back to the flat results/ root.
+    let out_dir = std::env::var("BENCH_RESULTS_DIR").unwrap_or_else(|_| "results".to_string());
+    std::fs::create_dir_all(&out_dir)?;
     let stamp = cmd("date", &["-u", "+%Y%m%dT%H%M%SZ"]).unwrap_or_else(epoch_stamp);
     let host = cmd("hostname", &["-s"]).unwrap_or_else(|| "host".to_string());
-    let path = format!("results/{mode}-{stamp}-{host}.json");
+    let path = format!("{out_dir}/{mode}-{stamp}-{host}.json");
     std::fs::write(&path, serde_json::to_string_pretty(&report)?)?;
     eprintln!("\nwrote {path}");
     Ok(())

@@ -166,8 +166,10 @@ report = {
 }
 ts = cmd("date","-u","+%Y%m%dT%H%M%SZ") or "run"
 host = cmd("hostname","-s") or cmd("hostname") or "host"
-os.makedirs("results", exist_ok=True)
-path = f"results/secondary-{ts}-{host}.json"
+# run.sh sets BENCH_RESULTS_DIR to a per-machine folder; standalone -> flat results/.
+outdir = os.environ.get("BENCH_RESULTS_DIR", "results")
+os.makedirs(outdir, exist_ok=True)
+path = f"{outdir}/secondary-{ts}-{host}.json"
 json.dump(report, open(path,"w"), indent=2)
 
 names = [s.split(":")[0] for s in specs]
