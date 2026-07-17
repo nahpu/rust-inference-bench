@@ -6118,6 +6118,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40e24eee682d89fb193496edf918a7f407d30175b2e785fe057e4392dfd182e0"
 
 [[package]]
+name = "pure-rust-framework"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "embed-burn",
+ "embed-candle",
+ "embed-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"

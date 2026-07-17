@@ -58,3 +58,6 @@ path = "src/bin/single_ort.rs"
 [[bench]]
 name = "embedding"
 harness = false
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

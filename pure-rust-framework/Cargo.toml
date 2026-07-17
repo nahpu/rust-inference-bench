@@ -1,0 +1,42 @@
+[package]
+name = "pure-rust-framework"
+version = "0.1.0"
+default-run = "pure-rust-framework"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+embed-core.workspace = true
+embed-candle.workspace = true
+embed-burn.workspace = true
+anyhow.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Per-engine GPU backends, composed into the OS bundles below. bench `gpu` mode
+# picks up whichever of these are compiled in.
+candle-metal = ["embed-candle/metal"]
+candle-cuda = ["embed-candle/cuda"]
+burn-wgpu = ["embed-burn/wgpu"]
+
+# OS GPU bundles selected by run.ps1/run.sh `--gpu <backend>`.
+gpu-macos = ["candle-metal", "burn-wgpu"]
+gpu-cuda = ["candle-cuda", "burn-wgpu"]
+gpu-wgpu = ["burn-wgpu"]
+gpu = ["gpu-macos"]
+
+# CPU BLAS overrides passed through from run.sh / run.ps1 `--blas`
+blas-mkl = ["embed-candle/mkl"]
+blas-openblas = ["embed-burn/openblas"]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

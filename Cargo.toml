@@ -6,6 +6,7 @@ members = [
     "crates/embed-burn",
     "crates/embed-ort",
     "runner",
+    "pure-rust-framework",
 ]
 
 [workspace.package]
