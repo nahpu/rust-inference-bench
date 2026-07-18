@@ -205,6 +205,12 @@ if [ "$DO_PLOTS" -eq 1 ]; then
         gpu_json="$(latest gpu)"
         [ -n "$gpu_json" ] && "$PY" scripts/plot.py "$gpu_json" "$BENCH_RESULTS_DIR/plots/gpu" || warn "no GPU results to plot"
     fi
+    log "converting SVGs to PNGs"
+    if command -v uv >/dev/null 2>&1; then
+        uv run --with pymupdf python scripts/convert_svgs.py
+    else
+        "$PY" scripts/convert_svgs.py || true
+    fi
 else
     log "plots: skipped"
 fi
@@ -212,4 +218,4 @@ fi
 # ---- summary --------------------------------------------------------------
 log "done — artifacts in $BENCH_RESULTS_DIR/"
 ls -t "$BENCH_RESULTS_DIR"/*.json 2>/dev/null | head -5 | sed 's/^/  /'
-echo "  plots: $BENCH_RESULTS_DIR/plots/{latency,throughput,slowdown}.svg"
+echo "  plots: $BENCH_RESULTS_DIR/plots/{latency,throughput,slowdown}.{svg,png}"

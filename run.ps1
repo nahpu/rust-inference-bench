@@ -371,6 +371,9 @@ if (-not $NoPlots) {
             Log-Warn "no GPU results to plot"
         }
     }
+
+    Log-Info "converting SVGs to PNGs"
+    & uv run --with pymupdf python scripts/convert_svgs.py
 } else {
     Log-Info "plots: skipped"
 }
@@ -381,6 +384,6 @@ $LatestFiles = Get-ChildItem "$BenchResultsDir/*.json" -ErrorAction SilentlyCont
 foreach ($File in $LatestFiles) {
     Write-Host "  $BenchResultsDir/$($File.Name)"
 }
-Write-Host "  plots: $BenchResultsDir/plots/latency.svg, throughput.svg, slowdown.svg"
+Write-Host "  plots: $BenchResultsDir/plots/latency.{svg,png}, throughput.{svg,png}, slowdown.{svg,png}"
 
 Pop-Location

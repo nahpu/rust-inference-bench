@@ -32,7 +32,7 @@ def color_for(engine, idx):
 
 def load():
     path = sys.argv[1] if len(sys.argv) > 1 else sorted(glob.glob("results/*.json"))[-1]
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f), path
 
 
@@ -159,17 +159,20 @@ def main():
 
     outdir = sys.argv[2] if len(sys.argv) > 2 else "results/plots"
     os.makedirs(outdir, exist_ok=True)
-    open(f"{outdir}/latency.svg", "w").write(
-        grouped_bars(lat, "seq_label", engines, "ms", lat_ymax,
-                     "p50 latency (ms)", f"Latency (lower is better) — {sub}")
-    )
-    open(f"{outdir}/throughput.svg", "w").write(
-        line_chart(thr, "batch", engines, "sps", thr_ymax,
-                   "sentences / sec", f"Throughput (higher is better) — {sub}")
-    )
-    open(f"{outdir}/slowdown.svg", "w").write(
-        slowdown_bars(lat, thr, engines, f"Slowdown vs fastest engine — {sub}")
-    )
+    with open(f"{outdir}/latency.svg", "w", encoding="utf-8") as f:
+        f.write(
+            grouped_bars(lat, "seq_label", engines, "ms", lat_ymax,
+                         "p50 latency (ms)", f"Latency (lower is better) — {sub}")
+        )
+    with open(f"{outdir}/throughput.svg", "w", encoding="utf-8") as f:
+        f.write(
+            line_chart(thr, "batch", engines, "sps", thr_ymax,
+                       "sentences / sec", f"Throughput (higher is better) — {sub}")
+        )
+    with open(f"{outdir}/slowdown.svg", "w", encoding="utf-8") as f:
+        f.write(
+            slowdown_bars(lat, thr, engines, f"Slowdown vs fastest engine — {sub}")
+        )
     print(f"plotted from {path} -> {outdir}/{{latency,throughput,slowdown}}.svg")
 
 

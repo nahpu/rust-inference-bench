@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="380" font-family="sans-serif" font-size="13">
 <rect width="760" height="380" fill="white"/>
-<text x="380.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Latency (lower is better) — aarch64, 1 thread, AC — 10 trials (median, IQR whiskers)</text>
+<text x="380.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Latency (lower is better) â€” aarch64, 1 thread, AC â€” 10 trials (median, IQR whiskers)</text>
 <line x1="70" y1="320" x2="740" y2="320" stroke="#333"/>
 <line x1="70" y1="320" x2="70" y2="40" stroke="#333"/>
 <line x1="70" y1="320.0" x2="740" y2="320.0" stroke="#eee"/>
